@@ -1,65 +1,86 @@
 import { useState, useEffect } from "react";
 import type { Task } from "./schemas";
 import TaskList from "./TaskList";
-import NewTaskInput from "./NewTaskInput";
+import NewTaskForm from "./NewTaskForm";
 import FilterBar, { type FilterType } from "./FilterBar";
-
-const STORAGE_KEY = "sfwe475_lab4_tasks";
-
-const initialTasks: Task[] = [
-  { id: 1, title: "Read Chapter 3", done: false, dueDate: "2026-10-25" },
-  { id: 2, title: "Build TaskCard", done: true },
-  { id: 3, title: "Start TaskList", done: false },
-];
+import { simulateFetchTasks } from "./mockApi";
 
 function TaskBoard() {
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved) as Task[];
-      }
-    } catch (e) {
-      console.error("Failed to read tasks from localStorage", e);
-    }
-    return initialTasks;
-  });
-
+  const [status, setStatus] = useState<"loading" | "success" | "empty" | "error">("loading");
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
 
+  // useEffect içinde veriyi çekiyoruz
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
-    } catch (e) {
-      console.error("Failed to save tasks to localStorage", e);
-    }
-  }, [tasks]);
+    simulateFetchTasks()
+      .then((data) => {
+        setTasks(data);
+        // Kısa if (ternary) yerine normal if/else kullanalım
+        if (data.length === 0) {
+          setStatus("empty");
+        } else {
+          setStatus("success");
+        }
+      })
+      .catch(() => {
+        setStatus("error");
+      });
+  }, []);
 
-  function handleAddTask(title: string) {
-    const nextId = tasks.length > 0 ? Math.max(...tasks.map((t) => t.id)) + 1 : 1;
-    setTasks([...tasks, { id: nextId, title, done: false }]);
+  function handleAddTask(newTaskInfo: { title: string; dueDate?: string }) {
+    // Daha basit bir ID bulma mantığı
+    let nextId = 1;
+    if (tasks.length > 0) {
+      const ids = tasks.map((t) => t.id);
+      nextId = Math.max(...ids) + 1;
+    }
+
+    const newTask = {
+      id: nextId,
+      title: newTaskInfo.title,
+      dueDate: newTaskInfo.dueDate,
+      done: false,
+    };
+
+    setTasks([...tasks, newTask]);
   }
 
   function handleToggleTask(id: number) {
-    setTasks(
-      tasks.map((task) =>
-        task.id === id ? { ...task, done: !task.done } : task
-      )
-    );
+    // Kısa yazım yerine daha açık bir map ve if döngüsü
+    const updatedTasks = tasks.map((task) => {
+      if (task.id === id) {
+        return { ...task, done: !task.done };
+      }
+      return task;
+    });
+    setTasks(updatedTasks);
   }
 
-  const filteredTasks = tasks.filter((task) => {
-    if (filter === "done") return task.done;
-    if (filter === "open") return !task.done;
-    return true;
-  });
+  // Filtrelemeyi daha basit bir if/else yapısıyla çözelim
+  let filteredTasks = tasks;
+  if (filter === "done") {
+    filteredTasks = tasks.filter((task) => task.done === true);
+  } else if (filter === "open") {
+    filteredTasks = tasks.filter((task) => task.done === false);
+  }
 
   return (
     <div className="task-board">
       <h1>Task Board</h1>
-      <NewTaskInput onAddTask={handleAddTask} />
+      
+      <NewTaskForm onAddTask={handleAddTask} />
       <FilterBar filter={filter} onFilterChange={setFilter} />
-      <TaskList tasks={filteredTasks} onToggleTask={handleToggleTask} />
+      
+      {/* Ekran okuyucular için aria-live div'i[cite: 8] */}
+      <div aria-live="polite">
+        {status === "loading" && <p>Loading tasks...</p>}
+        {status === "error" && <p>We couldn't load your tasks.</p>}
+        {status === "empty" && <p>No tasks yet. Add your first one below.</p>}
+      </div>
+
+      {status === "success" && (
+        <TaskList tasks={filteredTasks} onToggleTask={handleToggleTask} />
+      )}
     </div>
   );
 }
